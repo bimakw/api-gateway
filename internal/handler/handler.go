@@ -6,17 +6,20 @@ import (
 
 	"github.com/bimakw/api-gateway/config"
 	"github.com/bimakw/api-gateway/internal/apikey"
+	"github.com/bimakw/api-gateway/internal/health"
 )
 
 type Handler struct {
-	config     *config.Config
-	apiKeyMgr  *apikey.Manager
+	config        *config.Config
+	apiKeyMgr     *apikey.Manager
+	healthChecker *health.Checker
 }
 
-func New(cfg *config.Config, apiKeyMgr *apikey.Manager) *Handler {
+func New(cfg *config.Config, apiKeyMgr *apikey.Manager, healthChecker *health.Checker) *Handler {
 	return &Handler{
-		config:    cfg,
-		apiKeyMgr: apiKeyMgr,
+		config:        cfg,
+		apiKeyMgr:     apiKeyMgr,
+		healthChecker: healthChecker,
 	}
 }
 
@@ -26,9 +29,11 @@ type HealthResponse struct {
 }
 
 type ServiceInfo struct {
-	Name       string `json:"name"`
-	PathPrefix string `json:"path_prefix"`
-	TargetURL  string `json:"target_url"`
+	Name         string `json:"name"`
+	PathPrefix   string `json:"path_prefix"`
+	TargetURL    string `json:"target_url"`
+	Status       string `json:"status,omitempty"`
+	ResponseTime int64  `json:"response_time_ms,omitempty"`
 }
 
 type InfoResponse struct {
@@ -46,15 +51,25 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// Info returns gateway information
+// Info returns gateway information with service health status
 func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
 	services := make([]ServiceInfo, len(h.config.Services))
 	for i, svc := range h.config.Services {
-		services[i] = ServiceInfo{
+		svcInfo := ServiceInfo{
 			Name:       svc.Name,
 			PathPrefix: svc.PathPrefix,
 			TargetURL:  svc.TargetURL,
 		}
+
+		// Add health status if checker is available
+		if h.healthChecker != nil {
+			if health := h.healthChecker.GetHealth(svc.Name); health != nil {
+				svcInfo.Status = string(health.Status)
+				svcInfo.ResponseTime = health.ResponseTime
+			}
+		}
+
+		services[i] = svcInfo
 	}
 
 	resp := InfoResponse{
@@ -63,6 +78,23 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
 		Services: services,
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// ServicesHealth returns detailed health status of all backend services
+func (h *Handler) ServicesHealth(w http.ResponseWriter, r *http.Request) {
+	if h.healthChecker == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error":   "Health checker not available",
+			"message": "Service health checking is not enabled",
+		})
+		return
+	}
+
+	healthStatuses := h.healthChecker.GetAllHealth()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":   "ok",
+		"services": healthStatuses,
+	})
 }
 
 // CreateAPIKey creates a new API key
