@@ -13,6 +13,7 @@ import (
 	"github.com/bimakw/api-gateway/config"
 	"github.com/bimakw/api-gateway/internal/apikey"
 	"github.com/bimakw/api-gateway/internal/handler"
+	"github.com/bimakw/api-gateway/internal/health"
 	"github.com/bimakw/api-gateway/internal/middleware"
 	"github.com/bimakw/api-gateway/internal/proxy"
 	"github.com/bimakw/api-gateway/internal/ratelimit"
@@ -47,7 +48,19 @@ func main() {
 	// Initialize components
 	rateLimiter := ratelimit.New(redisClient, cfg.RateLimit.RequestsPerMinute, cfg.RateLimit.WindowDuration)
 	apiKeyMgr := apikey.NewManager(redisClient)
-	handlers := handler.New(cfg, apiKeyMgr)
+
+	// Initialize health checker for backend services
+	healthChecker := health.NewChecker(
+		cfg.Services,
+		30*time.Second, // check interval
+		5*time.Second,  // timeout
+		logger,
+	)
+
+	// Start health checker in background
+	go healthChecker.Start(ctx)
+
+	handlers := handler.New(cfg, apiKeyMgr, healthChecker)
 
 	// Create reverse proxy
 	reverseProxy, err := proxy.New(cfg.Services)
@@ -62,6 +75,7 @@ func main() {
 	// Gateway management endpoints
 	mux.HandleFunc("GET /health", handlers.Health)
 	mux.HandleFunc("GET /info", handlers.Info)
+	mux.HandleFunc("GET /services/health", handlers.ServicesHealth)
 	mux.HandleFunc("POST /admin/apikeys", handlers.CreateAPIKey)
 	mux.HandleFunc("GET /admin/apikeys", handlers.ListAPIKeys)
 	mux.HandleFunc("POST /admin/apikeys/{id}/revoke", handlers.RevokeAPIKey)
@@ -113,6 +127,9 @@ func main() {
 	if err := server.Shutdown(ctx); err != nil {
 		logger.Error("Server forced to shutdown", "error", err)
 	}
+
+	// Stop health checker
+	healthChecker.Stop()
 
 	// Close Redis connection
 	redisClient.Close()
