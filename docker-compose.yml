@@ -1,0 +1,45 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8081:8081"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8081
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RATE_LIMIT_RPM=60
+      - RATE_LIMIT_BURST=10
+      - AUTH_SERVICE_URL=http://host.docker.internal:8080
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - gateway-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: gateway-redis
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gateway-network
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+
+networks:
+  gateway-network:
+    driver: bridge
