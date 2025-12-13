@@ -7,19 +7,22 @@ import (
 	"github.com/bimakw/api-gateway/config"
 	"github.com/bimakw/api-gateway/internal/apikey"
 	"github.com/bimakw/api-gateway/internal/health"
+	"github.com/bimakw/api-gateway/internal/proxy"
 )
 
 type Handler struct {
 	config        *config.Config
 	apiKeyMgr     *apikey.Manager
 	healthChecker *health.Checker
+	reverseProxy  *proxy.ReverseProxy
 }
 
-func New(cfg *config.Config, apiKeyMgr *apikey.Manager, healthChecker *health.Checker) *Handler {
+func New(cfg *config.Config, apiKeyMgr *apikey.Manager, healthChecker *health.Checker, rp *proxy.ReverseProxy) *Handler {
 	return &Handler{
 		config:        cfg,
 		apiKeyMgr:     apiKeyMgr,
 		healthChecker: healthChecker,
+		reverseProxy:  rp,
 	}
 }
 
@@ -196,6 +199,73 @@ func (h *Handler) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status":  "success",
 		"message": "API key deleted",
+	})
+}
+
+// GetCircuitBreakers returns all circuit breaker statistics
+func (h *Handler) GetCircuitBreakers(w http.ResponseWriter, r *http.Request) {
+	if h.reverseProxy == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error":   "Reverse proxy not available",
+			"message": "Circuit breaker functionality is not enabled",
+		})
+		return
+	}
+
+	stats := h.reverseProxy.GetCircuitBreakerStats()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "success",
+		"data":   stats,
+	})
+}
+
+// ResetCircuitBreaker resets a specific circuit breaker
+func (h *Handler) ResetCircuitBreaker(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error":   "Invalid request",
+			"message": "service name is required",
+		})
+		return
+	}
+
+	if h.reverseProxy == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error":   "Reverse proxy not available",
+			"message": "Circuit breaker functionality is not enabled",
+		})
+		return
+	}
+
+	if !h.reverseProxy.ResetCircuitBreaker(name) {
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error":   "Not found",
+			"message": "Circuit breaker for service '" + name + "' not found",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "success",
+		"message": "Circuit breaker for '" + name + "' has been reset",
+	})
+}
+
+// ResetAllCircuitBreakers resets all circuit breakers
+func (h *Handler) ResetAllCircuitBreakers(w http.ResponseWriter, r *http.Request) {
+	if h.reverseProxy == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error":   "Reverse proxy not available",
+			"message": "Circuit breaker functionality is not enabled",
+		})
+		return
+	}
+
+	h.reverseProxy.ResetAllCircuitBreakers()
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "success",
+		"message": "All circuit breakers have been reset",
 	})
 }
 

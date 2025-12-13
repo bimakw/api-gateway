@@ -14,6 +14,7 @@ import (
 	"github.com/bimakw/api-gateway/internal/apikey"
 	"github.com/bimakw/api-gateway/internal/handler"
 	"github.com/bimakw/api-gateway/internal/health"
+	"github.com/bimakw/api-gateway/internal/circuitbreaker"
 	"github.com/bimakw/api-gateway/internal/middleware"
 	"github.com/bimakw/api-gateway/internal/proxy"
 	"github.com/bimakw/api-gateway/internal/ratelimit"
@@ -60,14 +61,22 @@ func main() {
 	// Start health checker in background
 	go healthChecker.Start(ctx)
 
-	handlers := handler.New(cfg, apiKeyMgr, healthChecker)
+	// Create circuit breaker config
+	cbConfig := circuitbreaker.Config{
+		MaxFailures:         cfg.CircuitBreaker.MaxFailures,
+		ResetTimeout:        time.Duration(cfg.CircuitBreaker.ResetTimeoutSeconds) * time.Second,
+		HalfOpenMaxRequests: cfg.CircuitBreaker.HalfOpenMaxRequests,
+		SuccessThreshold:    cfg.CircuitBreaker.SuccessThreshold,
+	}
 
-	// Create reverse proxy
-	reverseProxy, err := proxy.New(cfg.Services)
+	// Create reverse proxy with circuit breaker
+	reverseProxy, err := proxy.New(cfg.Services, cbConfig)
 	if err != nil {
 		logger.Error("Failed to create reverse proxy", "error", err)
 		os.Exit(1)
 	}
+
+	handlers := handler.New(cfg, apiKeyMgr, healthChecker, reverseProxy)
 
 	// Create router
 	mux := http.NewServeMux()
@@ -80,6 +89,11 @@ func main() {
 	mux.HandleFunc("GET /admin/apikeys", handlers.ListAPIKeys)
 	mux.HandleFunc("POST /admin/apikeys/{id}/revoke", handlers.RevokeAPIKey)
 	mux.HandleFunc("DELETE /admin/apikeys/{id}", handlers.DeleteAPIKey)
+
+	// Circuit breaker management endpoints
+	mux.HandleFunc("GET /admin/circuit-breakers", handlers.GetCircuitBreakers)
+	mux.HandleFunc("POST /admin/circuit-breakers/{name}/reset", handlers.ResetCircuitBreaker)
+	mux.HandleFunc("POST /admin/circuit-breakers/reset", handlers.ResetAllCircuitBreakers)
 
 	// Proxy all other requests
 	mux.Handle("/", reverseProxy)

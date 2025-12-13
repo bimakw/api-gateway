@@ -7,6 +7,7 @@ A lightweight, high-performance API Gateway built with Go, featuring rate limiti
 - **Rate Limiting**: Token bucket algorithm with Redis backend
 - **API Key Management**: Create, list, revoke, and delete API keys
 - **Reverse Proxy**: Route requests to multiple backend services
+- **Circuit Breaker**: Prevent cascading failures with automatic recovery
 - **Middleware Chain**: Logging, CORS, authentication, rate limiting
 - **Graceful Shutdown**: Clean shutdown with connection draining
 - **Health Checks**: Monitor gateway and backend service health
@@ -25,10 +26,14 @@ A lightweight, high-performance API Gateway built with Go, featuring rate limiti
 |--------|----------|-------------|
 | GET | `/health` | Health check |
 | GET | `/info` | Gateway info and registered services |
+| GET | `/services/health` | Backend services health status |
 | POST | `/admin/apikeys` | Create new API key |
 | GET | `/admin/apikeys` | List all API keys |
 | POST | `/admin/apikeys/{id}/revoke` | Revoke an API key |
 | DELETE | `/admin/apikeys/{id}` | Delete an API key |
+| GET | `/admin/circuit-breakers` | List all circuit breaker stats |
+| POST | `/admin/circuit-breakers/{name}/reset` | Reset specific circuit breaker |
+| POST | `/admin/circuit-breakers/reset` | Reset all circuit breakers |
 
 ### Proxy Routes
 
@@ -91,6 +96,10 @@ make run
 | `REDIS_DB` | Redis database | `0` |
 | `RATE_LIMIT_RPM` | Requests per minute | `60` |
 | `RATE_LIMIT_BURST` | Burst size | `10` |
+| `CB_MAX_FAILURES` | Max failures before circuit opens | `5` |
+| `CB_RESET_TIMEOUT_SECONDS` | Seconds before circuit tries half-open | `30` |
+| `CB_HALF_OPEN_MAX_REQUESTS` | Max requests in half-open state | `3` |
+| `CB_SUCCESS_THRESHOLD` | Successes needed to close circuit | `2` |
 | `AUTH_SERVICE_URL` | Auth service URL | `http://localhost:8080` |
 | `USER_SERVICE_URL` | User service URL | `http://localhost:8082` |
 
@@ -157,6 +166,72 @@ The gateway implements a token bucket algorithm:
 
 API keys can have custom rate limits that override the default.
 
+## Circuit Breaker
+
+The gateway implements the circuit breaker pattern to prevent cascading failures:
+
+```
+         ┌─────────────────────────────────────────────────────────┐
+         │                    Circuit Breaker                      │
+         │                                                         │
+         │    ┌──────────┐      ┌──────────┐      ┌──────────┐    │
+         │    │  CLOSED  │─────►│   OPEN   │─────►│HALF-OPEN │    │
+         │    │          │      │          │      │          │    │
+         │    └────▲─────┘      └──────────┘      └────┬─────┘    │
+         │         │                                    │          │
+         │         └────────────────────────────────────┘          │
+         │            (success threshold reached)                  │
+         └─────────────────────────────────────────────────────────┘
+```
+
+**States:**
+- **Closed**: Normal operation, requests pass through
+- **Open**: Circuit is tripped, requests fail fast with 503
+- **Half-Open**: Testing if service recovered, limited requests allowed
+
+**Transitions:**
+1. **Closed → Open**: After `CB_MAX_FAILURES` consecutive failures (5xx responses)
+2. **Open → Half-Open**: After `CB_RESET_TIMEOUT_SECONDS` have passed
+3. **Half-Open → Closed**: After `CB_SUCCESS_THRESHOLD` consecutive successes
+4. **Half-Open → Open**: On any failure
+
+### Circuit Breaker Usage
+
+```bash
+# Get all circuit breaker stats
+curl http://localhost:8081/admin/circuit-breakers
+```
+
+Response:
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "name": "auth-service",
+      "state": "closed",
+      "failures": 0,
+      "consecutive_successes": 5
+    },
+    {
+      "name": "user-service",
+      "state": "open",
+      "failures": 5,
+      "consecutive_successes": 0,
+      "last_failure": "2024-01-01T12:00:00Z"
+    }
+  ]
+}
+```
+
+```bash
+# Reset specific circuit breaker
+curl -X POST http://localhost:8081/admin/circuit-breakers/user-service/reset
+
+# Reset all circuit breakers
+curl -X POST http://localhost:8081/admin/circuit-breakers/reset
+```
+
 ## Project Structure
 
 ```
@@ -169,8 +244,13 @@ api-gateway/
 ├── internal/
 │   ├── apikey/
 │   │   └── apikey.go         # API key management
+│   ├── circuitbreaker/
+│   │   ├── circuitbreaker.go # Circuit breaker implementation
+│   │   └── registry.go       # Circuit breaker registry
 │   ├── handler/
 │   │   └── handler.go        # HTTP handlers
+│   ├── health/
+│   │   └── checker.go        # Health checker
 │   ├── middleware/
 │   │   └── middleware.go     # Middleware chain
 │   ├── proxy/

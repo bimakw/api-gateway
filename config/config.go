@@ -7,10 +7,18 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig
-	Redis    RedisConfig
-	RateLimit RateLimitConfig
-	Services []ServiceConfig
+	Server         ServerConfig
+	Redis          RedisConfig
+	RateLimit      RateLimitConfig
+	CircuitBreaker CircuitBreakerConfig
+	Services       []ServiceConfig
+}
+
+type CircuitBreakerConfig struct {
+	MaxFailures         int
+	ResetTimeoutSeconds int
+	HalfOpenMaxRequests int
+	SuccessThreshold    int
 }
 
 type ServerConfig struct {
@@ -54,6 +62,12 @@ func Load() *Config {
 			RequestsPerMinute: getEnvInt("RATE_LIMIT_RPM", 60),
 			BurstSize:         getEnvInt("RATE_LIMIT_BURST", 10),
 			WindowDuration:    time.Minute,
+		},
+		CircuitBreaker: CircuitBreakerConfig{
+			MaxFailures:         getEnvInt("CB_MAX_FAILURES", 5),
+			ResetTimeoutSeconds: getEnvInt("CB_RESET_TIMEOUT_SECONDS", 30),
+			HalfOpenMaxRequests: getEnvInt("CB_HALF_OPEN_MAX_REQUESTS", 3),
+			SuccessThreshold:    getEnvInt("CB_SUCCESS_THRESHOLD", 2),
 		},
 		Services: loadServicesFromEnv(),
 	}
