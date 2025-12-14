@@ -8,6 +8,7 @@ A lightweight, high-performance API Gateway built with Go, featuring rate limiti
 - **API Key Management**: Create, list, revoke, and delete API keys
 - **Reverse Proxy**: Route requests to multiple backend services
 - **Circuit Breaker**: Prevent cascading failures with automatic recovery
+- **Retry Logic**: Automatic retry with exponential backoff for failed requests
 - **Prometheus Metrics**: Request count, latency percentiles, error rates
 - **Middleware Chain**: Logging, CORS, authentication, rate limiting
 - **Graceful Shutdown**: Clean shutdown with connection draining
@@ -102,6 +103,11 @@ make run
 | `CB_RESET_TIMEOUT_SECONDS` | Seconds before circuit tries half-open | `30` |
 | `CB_HALF_OPEN_MAX_REQUESTS` | Max requests in half-open state | `3` |
 | `CB_SUCCESS_THRESHOLD` | Successes needed to close circuit | `2` |
+| `RETRY_MAX_RETRIES` | Maximum retry attempts | `3` |
+| `RETRY_INITIAL_DELAY_MS` | Initial delay before first retry (ms) | `100` |
+| `RETRY_MAX_DELAY_MS` | Maximum delay between retries (ms) | `5000` |
+| `RETRY_MULTIPLIER` | Delay multiplier for exponential backoff | `2.0` |
+| `RETRY_JITTER_FACTOR` | Randomness factor to prevent thundering herd | `0.1` |
 | `AUTH_SERVICE_URL` | Auth service URL | `http://localhost:8080` |
 | `USER_SERVICE_URL` | User service URL | `http://localhost:8082` |
 
@@ -234,6 +240,65 @@ curl -X POST http://localhost:8081/admin/circuit-breakers/user-service/reset
 curl -X POST http://localhost:8081/admin/circuit-breakers/reset
 ```
 
+## Retry Logic
+
+The gateway automatically retries failed requests to backend services using exponential backoff.
+
+### How It Works
+
+```
+Request → Backend Service
+           ↓
+        Failed? (502, 503, 504)
+           ↓
+        Retry with delay
+           ↓
+        delay = initial_delay * (multiplier ^ attempt) + jitter
+           ↓
+        Max retries exceeded?
+           ↓
+        Return error response
+```
+
+### Retryable Status Codes
+
+The following status codes trigger automatic retry:
+- `502 Bad Gateway`
+- `503 Service Unavailable`
+- `504 Gateway Timeout`
+
+### Exponential Backoff
+
+Delays increase exponentially with each retry:
+- Attempt 1: 100ms
+- Attempt 2: 200ms
+- Attempt 3: 400ms
+- (capped at max_delay)
+
+Jitter is added to prevent thundering herd when multiple requests fail simultaneously.
+
+### Response Headers
+
+When a request is retried, the response includes:
+- `X-Retry-Count`: Number of retries performed
+
+### Configuration Example
+
+```bash
+# Set retry configuration
+export RETRY_MAX_RETRIES=3
+export RETRY_INITIAL_DELAY_MS=100
+export RETRY_MAX_DELAY_MS=5000
+export RETRY_MULTIPLIER=2.0
+export RETRY_JITTER_FACTOR=0.1
+```
+
+### Disabling Retries
+
+To disable retries, set `RETRY_MAX_RETRIES=0`.
+
+---
+
 ## Prometheus Metrics
 
 The gateway exposes Prometheus-compatible metrics at `/metrics` endpoint.
@@ -321,8 +386,10 @@ api-gateway/
 │   │   └── middleware.go     # Middleware chain
 │   ├── proxy/
 │   │   └── proxy.go          # Reverse proxy
-│   └── ratelimit/
-│       └── ratelimit.go      # Rate limiter
+│   ├── ratelimit/
+│   │   └── ratelimit.go      # Rate limiter
+│   └── retry/
+│       └── retry.go          # Retry with exponential backoff
 ├── .env.example
 ├── .gitignore
 ├── docker-compose.yml

@@ -19,6 +19,7 @@ import (
 	"github.com/bimakw/api-gateway/internal/middleware"
 	"github.com/bimakw/api-gateway/internal/proxy"
 	"github.com/bimakw/api-gateway/internal/ratelimit"
+	"github.com/bimakw/api-gateway/internal/retry"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -70,12 +71,27 @@ func main() {
 		SuccessThreshold:    cfg.CircuitBreaker.SuccessThreshold,
 	}
 
-	// Create reverse proxy with circuit breaker
-	reverseProxy, err := proxy.New(cfg.Services, cbConfig)
+	// Create retry config
+	retryConfig := retry.Config{
+		MaxRetries:   cfg.Retry.MaxRetries,
+		InitialDelay: time.Duration(cfg.Retry.InitialDelayMs) * time.Millisecond,
+		MaxDelay:     time.Duration(cfg.Retry.MaxDelayMs) * time.Millisecond,
+		Multiplier:   cfg.Retry.Multiplier,
+		JitterFactor: cfg.Retry.JitterFactor,
+	}
+
+	// Create reverse proxy with circuit breaker and retry
+	reverseProxy, err := proxy.New(cfg.Services, cbConfig, retryConfig, logger)
 	if err != nil {
 		logger.Error("Failed to create reverse proxy", "error", err)
 		os.Exit(1)
 	}
+
+	logger.Info("Retry configured",
+		"max_retries", cfg.Retry.MaxRetries,
+		"initial_delay_ms", cfg.Retry.InitialDelayMs,
+		"max_delay_ms", cfg.Retry.MaxDelayMs,
+	)
 
 	handlers := handler.New(cfg, apiKeyMgr, healthChecker, reverseProxy)
 

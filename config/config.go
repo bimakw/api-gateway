@@ -11,6 +11,7 @@ type Config struct {
 	Redis          RedisConfig
 	RateLimit      RateLimitConfig
 	CircuitBreaker CircuitBreakerConfig
+	Retry          RetryConfig
 	Services       []ServiceConfig
 }
 
@@ -19,6 +20,14 @@ type CircuitBreakerConfig struct {
 	ResetTimeoutSeconds int
 	HalfOpenMaxRequests int
 	SuccessThreshold    int
+}
+
+type RetryConfig struct {
+	MaxRetries      int
+	InitialDelayMs  int
+	MaxDelayMs      int
+	Multiplier      float64
+	JitterFactor    float64
 }
 
 type ServerConfig struct {
@@ -69,6 +78,13 @@ func Load() *Config {
 			HalfOpenMaxRequests: getEnvInt("CB_HALF_OPEN_MAX_REQUESTS", 3),
 			SuccessThreshold:    getEnvInt("CB_SUCCESS_THRESHOLD", 2),
 		},
+		Retry: RetryConfig{
+			MaxRetries:     getEnvInt("RETRY_MAX_RETRIES", 3),
+			InitialDelayMs: getEnvInt("RETRY_INITIAL_DELAY_MS", 100),
+			MaxDelayMs:     getEnvInt("RETRY_MAX_DELAY_MS", 5000),
+			Multiplier:     getEnvFloat("RETRY_MULTIPLIER", 2.0),
+			JitterFactor:   getEnvFloat("RETRY_JITTER_FACTOR", 0.1),
+		},
 		Services: loadServicesFromEnv(),
 	}
 }
@@ -103,6 +119,15 @@ func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
+		}
+	}
+	return defaultValue
+}
+
+func getEnvFloat(key string, defaultValue float64) float64 {
+	if value := os.Getenv(key); value != "" {
+		if floatValue, err := strconv.ParseFloat(value, 64); err == nil {
+			return floatValue
 		}
 	}
 	return defaultValue
