@@ -2,6 +2,9 @@ package middleware
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -210,6 +213,82 @@ func Recover(logger *slog.Logger) Middleware {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// AdminAuth provides Basic Authentication for admin endpoints
+// Uses constant-time comparison to prevent timing attacks
+func AdminAuth(username, password string, logger *slog.Logger) Middleware {
+	// Pre-compute hashes for constant-time comparison
+	expectedUsernameHash := sha256.Sum256([]byte(username))
+	expectedPasswordHash := sha256.Sum256([]byte(password))
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Only protect /admin/* paths
+			if !strings.HasPrefix(r.URL.Path, "/admin") {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Get Authorization header
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" {
+				adminAuthFailed(w, "Authorization header required")
+				return
+			}
+
+			// Check for Basic auth prefix
+			if !strings.HasPrefix(authHeader, "Basic ") {
+				adminAuthFailed(w, "Basic authentication required")
+				return
+			}
+
+			// Decode base64 credentials
+			encoded := strings.TrimPrefix(authHeader, "Basic ")
+			decoded, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil {
+				adminAuthFailed(w, "Invalid authorization header")
+				return
+			}
+
+			// Split username:password
+			credentials := string(decoded)
+			colonIdx := strings.Index(credentials, ":")
+			if colonIdx == -1 {
+				adminAuthFailed(w, "Invalid credentials format")
+				return
+			}
+
+			providedUsername := credentials[:colonIdx]
+			providedPassword := credentials[colonIdx+1:]
+
+			// Constant-time comparison to prevent timing attacks
+			providedUsernameHash := sha256.Sum256([]byte(providedUsername))
+			providedPasswordHash := sha256.Sum256([]byte(providedPassword))
+
+			usernameMatch := subtle.ConstantTimeCompare(providedUsernameHash[:], expectedUsernameHash[:]) == 1
+			passwordMatch := subtle.ConstantTimeCompare(providedPasswordHash[:], expectedPasswordHash[:]) == 1
+
+			if !usernameMatch || !passwordMatch {
+				logger.Warn("admin auth failed",
+					"client_ip", getClientIP(r),
+					"path", r.URL.Path,
+				)
+				adminAuthFailed(w, "Invalid credentials")
+				return
+			}
+
+			// Authentication successful
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func adminAuthFailed(w http.ResponseWriter, message string) {
+	w.Header().Set("WWW-Authenticate", `Basic realm="API Gateway Admin", charset="UTF-8"`)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	w.Write([]byte(`{"error":"Unauthorized","message":"` + message + `"}`))
 }
 
 // responseWriter wraps http.ResponseWriter to capture status code

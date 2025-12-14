@@ -9,6 +9,7 @@ A lightweight, high-performance API Gateway built with Go, featuring rate limiti
 - **Reverse Proxy**: Route requests to multiple backend services
 - **Circuit Breaker**: Prevent cascading failures with automatic recovery
 - **Retry Logic**: Automatic retry with exponential backoff for failed requests
+- **Admin Authentication**: Basic auth protection for admin endpoints
 - **Prometheus Metrics**: Request count, latency percentiles, error rates
 - **Middleware Chain**: Logging, CORS, authentication, rate limiting
 - **Graceful Shutdown**: Clean shutdown with connection draining
@@ -108,6 +109,9 @@ make run
 | `RETRY_MAX_DELAY_MS` | Maximum delay between retries (ms) | `5000` |
 | `RETRY_MULTIPLIER` | Delay multiplier for exponential backoff | `2.0` |
 | `RETRY_JITTER_FACTOR` | Randomness factor to prevent thundering herd | `0.1` |
+| `ADMIN_AUTH_ENABLED` | Enable/disable admin authentication | `true` |
+| `ADMIN_USERNAME` | Admin username for Basic Auth | `admin` |
+| `ADMIN_PASSWORD` | Admin password (required if enabled) | `` |
 | `AUTH_SERVICE_URL` | Auth service URL | `http://localhost:8080` |
 | `USER_SERVICE_URL` | User service URL | `http://localhost:8082` |
 
@@ -239,6 +243,62 @@ curl -X POST http://localhost:8081/admin/circuit-breakers/user-service/reset
 # Reset all circuit breakers
 curl -X POST http://localhost:8081/admin/circuit-breakers/reset
 ```
+
+## Admin Authentication
+
+Admin endpoints (`/admin/*`) are protected with HTTP Basic Authentication.
+
+### Protected Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /admin/apikeys` | Create API key |
+| `GET /admin/apikeys` | List API keys |
+| `POST /admin/apikeys/{id}/revoke` | Revoke API key |
+| `DELETE /admin/apikeys/{id}` | Delete API key |
+| `GET /admin/circuit-breakers` | List circuit breakers |
+| `POST /admin/circuit-breakers/{name}/reset` | Reset circuit breaker |
+| `POST /admin/circuit-breakers/reset` | Reset all circuit breakers |
+
+### Configuration
+
+```bash
+# Enable admin auth (default: true)
+export ADMIN_AUTH_ENABLED=true
+
+# Set admin credentials
+export ADMIN_USERNAME=admin
+export ADMIN_PASSWORD=your-secure-password
+```
+
+**IMPORTANT**: If `ADMIN_AUTH_ENABLED=true` and `ADMIN_PASSWORD` is not set, the gateway will fail to start.
+
+### Usage Examples
+
+```bash
+# Access admin endpoint with Basic Auth
+curl -u admin:your-password http://localhost:8081/admin/apikeys
+
+# Or using Authorization header
+curl -H "Authorization: Basic $(echo -n 'admin:your-password' | base64)" \
+  http://localhost:8081/admin/apikeys
+```
+
+### Security Features
+
+- **Constant-time comparison**: Prevents timing attacks
+- **SHA256 hashing**: Credentials are hashed before comparison
+- **Failed attempt logging**: Unauthorized attempts are logged with client IP
+
+### Disabling Admin Auth
+
+To disable admin authentication (not recommended for production):
+
+```bash
+export ADMIN_AUTH_ENABLED=false
+```
+
+---
 
 ## Retry Logic
 

@@ -93,6 +93,18 @@ func main() {
 		"max_delay_ms", cfg.Retry.MaxDelayMs,
 	)
 
+	// Validate admin config
+	if cfg.Admin.Enabled && cfg.Admin.Password == "" {
+		logger.Error("Admin auth is enabled but ADMIN_PASSWORD is not set")
+		os.Exit(1)
+	}
+
+	if cfg.Admin.Enabled {
+		logger.Info("Admin authentication enabled", "username", cfg.Admin.Username)
+	} else {
+		logger.Warn("Admin authentication is DISABLED - admin endpoints are not protected!")
+	}
+
 	handlers := handler.New(cfg, apiKeyMgr, healthChecker, reverseProxy)
 
 	// Create router
@@ -118,16 +130,27 @@ func main() {
 	// Proxy all other requests
 	mux.Handle("/", reverseProxy)
 
-	// Apply middleware chain
-	finalHandler := middleware.Chain(
-		mux,
+	// Build middleware chain
+	middlewares := []middleware.Middleware{
 		middleware.Recover(logger),
-		middleware.Metrics(), // Metrics collection
+		middleware.Metrics(),
 		middleware.Logger(logger),
 		middleware.CORS([]string{"*"}),
-		middleware.APIKeyAuth(apiKeyMgr, false), // API key optional
+	}
+
+	// Add admin auth if enabled
+	if cfg.Admin.Enabled {
+		middlewares = append(middlewares, middleware.AdminAuth(cfg.Admin.Username, cfg.Admin.Password, logger))
+	}
+
+	// Add remaining middlewares
+	middlewares = append(middlewares,
+		middleware.APIKeyAuth(apiKeyMgr, false),
 		middleware.RateLimit(rateLimiter, cfg.RateLimit.BurstSize),
 	)
+
+	// Apply middleware chain
+	finalHandler := middleware.Chain(mux, middlewares...)
 
 	// Create server
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)

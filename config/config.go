@@ -12,6 +12,7 @@ type Config struct {
 	RateLimit      RateLimitConfig
 	CircuitBreaker CircuitBreakerConfig
 	Retry          RetryConfig
+	Admin          AdminConfig
 	Services       []ServiceConfig
 }
 
@@ -28,6 +29,12 @@ type RetryConfig struct {
 	MaxDelayMs      int
 	Multiplier      float64
 	JitterFactor    float64
+}
+
+type AdminConfig struct {
+	Username string
+	Password string
+	Enabled  bool
 }
 
 type ServerConfig struct {
@@ -85,6 +92,11 @@ func Load() *Config {
 			Multiplier:     getEnvFloat("RETRY_MULTIPLIER", 2.0),
 			JitterFactor:   getEnvFloat("RETRY_JITTER_FACTOR", 0.1),
 		},
+		Admin: AdminConfig{
+			Username: getEnv("ADMIN_USERNAME", "admin"),
+			Password: getEnv("ADMIN_PASSWORD", ""),
+			Enabled:  getEnvBool("ADMIN_AUTH_ENABLED", true),
+		},
 		Services: loadServicesFromEnv(),
 	}
 }
@@ -128,6 +140,15 @@ func getEnvFloat(key string, defaultValue float64) float64 {
 	if value := os.Getenv(key); value != "" {
 		if floatValue, err := strconv.ParseFloat(value, 64); err == nil {
 			return floatValue
+		}
+	}
+	return defaultValue
+}
+
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
 		}
 	}
 	return defaultValue
