@@ -12,9 +12,10 @@ import (
 
 	"github.com/bimakw/api-gateway/config"
 	"github.com/bimakw/api-gateway/internal/apikey"
+	"github.com/bimakw/api-gateway/internal/circuitbreaker"
 	"github.com/bimakw/api-gateway/internal/handler"
 	"github.com/bimakw/api-gateway/internal/health"
-	"github.com/bimakw/api-gateway/internal/circuitbreaker"
+	"github.com/bimakw/api-gateway/internal/metrics"
 	"github.com/bimakw/api-gateway/internal/middleware"
 	"github.com/bimakw/api-gateway/internal/proxy"
 	"github.com/bimakw/api-gateway/internal/ratelimit"
@@ -95,6 +96,9 @@ func main() {
 	mux.HandleFunc("POST /admin/circuit-breakers/{name}/reset", handlers.ResetCircuitBreaker)
 	mux.HandleFunc("POST /admin/circuit-breakers/reset", handlers.ResetAllCircuitBreakers)
 
+	// Metrics endpoint (Prometheus compatible)
+	mux.HandleFunc("GET /metrics", metrics.Handler())
+
 	// Proxy all other requests
 	mux.Handle("/", reverseProxy)
 
@@ -102,6 +106,7 @@ func main() {
 	finalHandler := middleware.Chain(
 		mux,
 		middleware.Recover(logger),
+		middleware.Metrics(), // Metrics collection
 		middleware.Logger(logger),
 		middleware.CORS([]string{"*"}),
 		middleware.APIKeyAuth(apiKeyMgr, false), // API key optional

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bimakw/api-gateway/internal/apikey"
+	"github.com/bimakw/api-gateway/internal/metrics"
 	"github.com/bimakw/api-gateway/internal/ratelimit"
 )
 
@@ -55,6 +56,36 @@ func Logger(logger *slog.Logger) Middleware {
 	}
 }
 
+// Metrics records request metrics for Prometheus
+func Metrics() Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip metrics endpoint itself to avoid recursion
+			if r.URL.Path == "/metrics" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			m := metrics.Get()
+			start := time.Now()
+
+			// Track in-flight requests
+			m.IncrementInFlight()
+			defer m.DecrementInFlight()
+
+			// Wrap response writer to capture status code
+			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+			next.ServeHTTP(wrapped, r)
+
+			duration := time.Since(start)
+
+			// Record request metrics
+			m.RecordRequest(r.Method, r.URL.Path, wrapped.statusCode, duration)
+		})
+	}
+}
+
 // RateLimit applies rate limiting based on IP or API key
 func RateLimit(limiter *ratelimit.RateLimiter, burstSize int) Middleware {
 	return func(next http.Handler) http.Handler {
@@ -76,6 +107,9 @@ func RateLimit(limiter *ratelimit.RateLimiter, burstSize int) Middleware {
 			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(result.ResetAfter).Unix(), 10))
 
 			if !result.Allowed {
+				// Record rate limited request in metrics
+				metrics.Get().IncrementRateLimited()
+
 				w.Header().Set("Retry-After", strconv.Itoa(int(result.ResetAfter.Seconds())))
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)

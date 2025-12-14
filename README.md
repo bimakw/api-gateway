@@ -8,6 +8,7 @@ A lightweight, high-performance API Gateway built with Go, featuring rate limiti
 - **API Key Management**: Create, list, revoke, and delete API keys
 - **Reverse Proxy**: Route requests to multiple backend services
 - **Circuit Breaker**: Prevent cascading failures with automatic recovery
+- **Prometheus Metrics**: Request count, latency percentiles, error rates
 - **Middleware Chain**: Logging, CORS, authentication, rate limiting
 - **Graceful Shutdown**: Clean shutdown with connection draining
 - **Health Checks**: Monitor gateway and backend service health
@@ -26,6 +27,7 @@ A lightweight, high-performance API Gateway built with Go, featuring rate limiti
 |--------|----------|-------------|
 | GET | `/health` | Health check |
 | GET | `/info` | Gateway info and registered services |
+| GET | `/metrics` | Prometheus metrics endpoint |
 | GET | `/services/health` | Backend services health status |
 | POST | `/admin/apikeys` | Create new API key |
 | GET | `/admin/apikeys` | List all API keys |
@@ -232,6 +234,68 @@ curl -X POST http://localhost:8081/admin/circuit-breakers/user-service/reset
 curl -X POST http://localhost:8081/admin/circuit-breakers/reset
 ```
 
+## Prometheus Metrics
+
+The gateway exposes Prometheus-compatible metrics at `/metrics` endpoint.
+
+### Available Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `gateway_uptime_seconds` | gauge | Time since gateway started |
+| `gateway_requests_in_flight` | gauge | Current number of requests being processed |
+| `gateway_rate_limited_total` | counter | Total number of rate limited requests |
+| `gateway_http_requests_total` | counter | Total HTTP requests by method, path, status |
+| `gateway_http_request_duration_ms` | summary | Request duration percentiles (p50, p95, p99) |
+| `gateway_backend_requests_total` | counter | Total requests to backend services |
+| `gateway_backend_errors_total` | counter | Total errors from backend services |
+| `gateway_circuit_breaker_state` | gauge | Circuit breaker state (1=closed, 0.5=half-open, 0=open) |
+| `gateway_circuit_breaker_trips_total` | counter | Total circuit breaker trips |
+
+### Usage Examples
+
+```bash
+# Get metrics in Prometheus format
+curl http://localhost:8081/metrics
+
+# Get metrics in JSON format
+curl -H "Accept: application/json" http://localhost:8081/metrics
+```
+
+### Prometheus Configuration
+
+Add to your `prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['localhost:8081']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+```
+
+### Grafana Dashboard
+
+Key queries for Grafana dashboards:
+
+```promql
+# Request rate (per second)
+rate(gateway_http_requests_total[5m])
+
+# Error rate (5xx responses)
+rate(gateway_http_requests_total{status=~"5.."}[5m])
+
+# P95 latency
+gateway_http_request_duration_ms{quantile="0.95"}
+
+# Rate limited requests
+rate(gateway_rate_limited_total[5m])
+
+# Circuit breaker state
+gateway_circuit_breaker_state
+```
+
 ## Project Structure
 
 ```
@@ -250,7 +314,9 @@ api-gateway/
 │   ├── handler/
 │   │   └── handler.go        # HTTP handlers
 │   ├── health/
-│   │   └── checker.go        # Health checker
+│   │   └── health.go         # Health checker
+│   ├── metrics/
+│   │   └── metrics.go        # Prometheus metrics
 │   ├── middleware/
 │   │   └── middleware.go     # Middleware chain
 │   ├── proxy/
