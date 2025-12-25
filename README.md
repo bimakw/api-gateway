@@ -476,6 +476,25 @@ make fmt
 make build
 ```
 
+## Testing
+
+```bash
+# Run all tests
+go test ./...
+
+# Run with verbose output
+go test ./... -v
+
+# Run specific package tests
+go test ./internal/circuitbreaker/...
+go test ./internal/retry/...
+```
+
+| Package | Tests | Coverage |
+|---------|-------|----------|
+| Circuit Breaker | 15 | State machine, transitions, concurrency, reset |
+| Retry | 24 | Exponential backoff, jitter, transient errors |
+
 ## License
 
 MIT License
