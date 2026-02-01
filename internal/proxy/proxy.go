@@ -9,10 +9,12 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bimakw/api-gateway/config"
 	"github.com/bimakw/api-gateway/internal/circuitbreaker"
+	"github.com/bimakw/api-gateway/internal/loadbalancer"
 	"github.com/bimakw/api-gateway/internal/metrics"
 	"github.com/bimakw/api-gateway/internal/retry"
 )
@@ -22,11 +24,13 @@ type ReverseProxy struct {
 	cbRegistry *circuitbreaker.Registry
 	retryer    *retry.Retryer
 	logger     *slog.Logger
+	mu         sync.RWMutex
 }
 
 type serviceProxy struct {
-	config config.ServiceConfig
-	proxy  *httputil.ReverseProxy
+	config       config.ServiceConfig
+	loadBalancer *loadbalancer.LoadBalancer
+	proxies      map[string]*httputil.ReverseProxy // key: backend URL string
 }
 
 func New(services []config.ServiceConfig, cbConfig circuitbreaker.Config, retryConfig retry.Config, logger *slog.Logger) (*ReverseProxy, error) {
@@ -38,11 +42,47 @@ func New(services []config.ServiceConfig, cbConfig circuitbreaker.Config, retryC
 	}
 
 	for _, svc := range services {
-		targetURL, err := url.Parse(svc.TargetURL)
+		svcProxy, err := createServiceProxy(svc, logger)
+		if err != nil {
+			return nil, err
+		}
+		rp.services[svc.PathPrefix] = svcProxy
+
+		logger.Info("Service configured",
+			"service", svc.Name,
+			"path", svc.PathPrefix,
+			"backends", len(svcProxy.proxies),
+			"strategy", svc.GetStrategy(),
+		)
+	}
+
+	return rp, nil
+}
+
+func createServiceProxy(svc config.ServiceConfig, logger *slog.Logger) (*serviceProxy, error) {
+	backendConfigs := svc.GetBackends()
+	if len(backendConfigs) == 0 {
+		return nil, nil
+	}
+
+	backends := make([]*loadbalancer.Backend, 0, len(backendConfigs))
+	proxies := make(map[string]*httputil.ReverseProxy)
+
+	for _, bc := range backendConfigs {
+		targetURL, err := url.Parse(bc.URL)
 		if err != nil {
 			return nil, err
 		}
 
+		// Create backend for load balancer
+		backend := &loadbalancer.Backend{
+			URL:       targetURL,
+			Weight:    bc.Weight,
+			IsHealthy: true, // Start as healthy
+		}
+		backends = append(backends, backend)
+
+		// Create reverse proxy for this backend
 		proxy := httputil.NewSingleHostReverseProxy(targetURL)
 
 		// Customize the director to handle path manipulation
@@ -62,18 +102,26 @@ func New(services []config.ServiceConfig, cbConfig circuitbreaker.Config, retryC
 
 		// Custom error handler
 		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+			logger.Warn("Backend error",
+				"service", svc.Name,
+				"backend", targetURL.String(),
+				"error", err.Error(),
+			)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadGateway)
 			w.Write([]byte(`{"error":"Service unavailable","message":"` + err.Error() + `"}`))
 		}
 
-		rp.services[svc.PathPrefix] = &serviceProxy{
-			config: svc,
-			proxy:  proxy,
-		}
+		proxies[targetURL.String()] = proxy
 	}
 
-	return rp, nil
+	lb := loadbalancer.New(svc.GetStrategy(), backends)
+
+	return &serviceProxy{
+		config:       svc,
+		loadBalancer: lb,
+		proxies:      proxies,
+	}, nil
 }
 
 func (rp *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -104,6 +152,28 @@ func (rp *ReverseProxy) proxyWithRetry(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 
+	// Select a healthy backend
+	backend := svc.loadBalancer.Select()
+	if backend == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"error":"Service unavailable","message":"No healthy backends available for ` + svc.config.Name + `"}`))
+		return
+	}
+
+	// Get proxy for selected backend
+	proxy := svc.proxies[backend.URL.String()]
+	if proxy == nil {
+		rp.logger.Error("No proxy found for backend",
+			"service", svc.config.Name,
+			"backend", backend.URL.String(),
+		)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":"Internal error","message":"Backend proxy not found"}`))
+		return
+	}
+
 	// Buffer request body for potential retries (only for methods with body)
 	var bodyBytes []byte
 	if r.Body != nil && r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -121,9 +191,19 @@ func (rp *ReverseProxy) proxyWithRetry(w http.ResponseWriter, r *http.Request, s
 	start := time.Now()
 	var lastRecorder *retryableResponseRecorder
 	attempt := 0
+	selectedBackend := backend
 
 	result := rp.retryer.Execute(r.Context(), func() (int, error) {
 		attempt++
+
+		// On retry, try to select a different backend if available
+		if attempt > 1 {
+			newBackend := svc.loadBalancer.Select()
+			if newBackend != nil {
+				selectedBackend = newBackend
+				proxy = svc.proxies[selectedBackend.URL.String()]
+			}
+		}
 
 		// Restore body for retry
 		if bodyBytes != nil {
@@ -138,12 +218,13 @@ func (rp *ReverseProxy) proxyWithRetry(w http.ResponseWriter, r *http.Request, s
 		}
 
 		// Execute proxy
-		svc.proxy.ServeHTTP(lastRecorder, r)
+		proxy.ServeHTTP(lastRecorder, r)
 
 		// Log retry attempt
 		if attempt > 1 {
 			rp.logger.Info("retry attempt",
 				"service", svc.config.Name,
+				"backend", selectedBackend.URL.String(),
 				"attempt", attempt,
 				"status", lastRecorder.statusCode,
 				"path", r.URL.Path,
@@ -177,6 +258,9 @@ func (rp *ReverseProxy) proxyWithRetry(w http.ResponseWriter, r *http.Request, s
 		if result.Retried {
 			w.Header().Set("X-Retry-Count", strconv.Itoa(result.Attempts-1))
 		}
+
+		// Add backend info header
+		w.Header().Set("X-Backend", selectedBackend.URL.Host)
 
 		w.WriteHeader(lastRecorder.statusCode)
 		w.Write(lastRecorder.body.Bytes())
@@ -234,4 +318,72 @@ func (rp *ReverseProxy) ResetCircuitBreaker(serviceName string) bool {
 // ResetAllCircuitBreakers resets all circuit breakers
 func (rp *ReverseProxy) ResetAllCircuitBreakers() {
 	rp.cbRegistry.Reset()
+}
+
+// UpdateBackendHealth updates the health status of a backend instance
+func (rp *ReverseProxy) UpdateBackendHealth(serviceName, instanceURL string, healthy bool) {
+	rp.mu.RLock()
+	defer rp.mu.RUnlock()
+
+	for _, svc := range rp.services {
+		if svc.config.Name == serviceName {
+			svc.loadBalancer.SetHealthy(instanceURL, healthy)
+			rp.logger.Debug("Backend health updated",
+				"service", serviceName,
+				"backend", instanceURL,
+				"healthy", healthy,
+			)
+			return
+		}
+	}
+}
+
+// GetBackendStats returns backend statistics for a service
+func (rp *ReverseProxy) GetBackendStats(serviceName string) []BackendStats {
+	rp.mu.RLock()
+	defer rp.mu.RUnlock()
+
+	for _, svc := range rp.services {
+		if svc.config.Name == serviceName {
+			backends := svc.loadBalancer.GetBackends()
+			stats := make([]BackendStats, 0, len(backends))
+			for _, b := range backends {
+				stats = append(stats, BackendStats{
+					URL:       b.URL.String(),
+					IsHealthy: b.IsHealthy,
+					Weight:    b.Weight,
+				})
+			}
+			return stats
+		}
+	}
+	return nil
+}
+
+// BackendStats contains statistics for a backend instance
+type BackendStats struct {
+	URL       string `json:"url"`
+	IsHealthy bool   `json:"is_healthy"`
+	Weight    int    `json:"weight"`
+}
+
+// GetAllBackendStats returns backend statistics for all services
+func (rp *ReverseProxy) GetAllBackendStats() map[string][]BackendStats {
+	rp.mu.RLock()
+	defer rp.mu.RUnlock()
+
+	result := make(map[string][]BackendStats)
+	for _, svc := range rp.services {
+		backends := svc.loadBalancer.GetBackends()
+		stats := make([]BackendStats, 0, len(backends))
+		for _, b := range backends {
+			stats = append(stats, BackendStats{
+				URL:       b.URL.String(),
+				IsHealthy: b.IsHealthy,
+				Weight:    b.Weight,
+			})
+		}
+		result[svc.config.Name] = stats
+	}
+	return result
 }

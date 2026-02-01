@@ -87,6 +87,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Register health callback to update load balancer health status
+	healthChecker.RegisterCallback(func(serviceName, instanceURL string, healthy bool) {
+		reverseProxy.UpdateBackendHealth(serviceName, instanceURL, healthy)
+		logger.Info("Backend health changed",
+			"service", serviceName,
+			"backend", instanceURL,
+			"healthy", healthy,
+		)
+	})
+
 	logger.Info("Retry configured",
 		"max_retries", cfg.Retry.MaxRetries,
 		"initial_delay_ms", cfg.Retry.InitialDelayMs,
