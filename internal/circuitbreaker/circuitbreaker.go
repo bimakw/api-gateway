@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// State represents the circuit breaker state
 type State int
 
 const (
@@ -29,59 +28,51 @@ func (s State) String() string {
 }
 
 var (
-	ErrCircuitOpen    = errors.New("circuit breaker is open")
+	ErrCircuitOpen     = errors.New("circuit breaker is open")
 	ErrTooManyRequests = errors.New("too many requests in half-open state")
 )
 
-// Config holds circuit breaker configuration
 type Config struct {
-	// MaxFailures is the maximum number of failures before opening the circuit
-	MaxFailures int
-	// ResetTimeout is how long to wait before transitioning from open to half-open
-	ResetTimeout time.Duration
-	// HalfOpenMaxRequests is the maximum number of requests allowed in half-open state
+	MaxFailures         int
+	ResetTimeout        time.Duration
 	HalfOpenMaxRequests int
-	// SuccessThreshold is the number of consecutive successes needed to close the circuit
-	SuccessThreshold int
+	SuccessThreshold    int
 }
 
-// DefaultConfig returns default circuit breaker configuration
 func DefaultConfig() Config {
 	return Config{
-		MaxFailures:         5,
-		ResetTimeout:        30 * time.Second,
-		HalfOpenMaxRequests: 3,
-		SuccessThreshold:    2,
+		MaxFailures:         7,
+		ResetTimeout:        45 * time.Second,
+		HalfOpenMaxRequests: 2,
+		SuccessThreshold:    3,
 	}
 }
 
-// CircuitBreaker implements the circuit breaker pattern
 type CircuitBreaker struct {
 	name   string
 	config Config
 
-	mu                  sync.RWMutex
-	state               State
-	failures            int
-	successes           int
-	lastFailure         time.Time
-	halfOpenRequests    int
+	mu                   sync.RWMutex
+	state                State
+	failures             int
+	successes            int
+	lastFailure          time.Time
+	halfOpenRequests     int
 	consecutiveSuccesses int
 }
 
-// New creates a new circuit breaker
 func New(name string, config Config) *CircuitBreaker {
 	if config.MaxFailures <= 0 {
-		config.MaxFailures = 5
+		config.MaxFailures = 7
 	}
 	if config.ResetTimeout <= 0 {
-		config.ResetTimeout = 30 * time.Second
+		config.ResetTimeout = 45 * time.Second
 	}
 	if config.HalfOpenMaxRequests <= 0 {
-		config.HalfOpenMaxRequests = 3
+		config.HalfOpenMaxRequests = 2
 	}
 	if config.SuccessThreshold <= 0 {
-		config.SuccessThreshold = 2
+		config.SuccessThreshold = 3
 	}
 
 	return &CircuitBreaker{
@@ -91,7 +82,6 @@ func New(name string, config Config) *CircuitBreaker {
 	}
 }
 
-// Execute runs the given function through the circuit breaker
 func (cb *CircuitBreaker) Execute(fn func() error) error {
 	if err := cb.beforeRequest(); err != nil {
 		return err
@@ -103,12 +93,10 @@ func (cb *CircuitBreaker) Execute(fn func() error) error {
 	return err
 }
 
-// AllowRequest checks if a request is allowed
 func (cb *CircuitBreaker) AllowRequest() bool {
 	return cb.beforeRequest() == nil
 }
 
-// beforeRequest is called before each request
 func (cb *CircuitBreaker) beforeRequest() error {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
@@ -137,7 +125,6 @@ func (cb *CircuitBreaker) beforeRequest() error {
 	return nil
 }
 
-// afterRequest is called after each request completes
 func (cb *CircuitBreaker) afterRequest(success bool) {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
@@ -166,17 +153,14 @@ func (cb *CircuitBreaker) afterRequest(success bool) {
 	}
 }
 
-// RecordSuccess records a successful request
 func (cb *CircuitBreaker) RecordSuccess() {
 	cb.afterRequest(true)
 }
 
-// RecordFailure records a failed request
 func (cb *CircuitBreaker) RecordFailure() {
 	cb.afterRequest(false)
 }
 
-// State transitions
 func (cb *CircuitBreaker) toOpen() {
 	cb.state = StateOpen
 	cb.lastFailure = time.Now()
@@ -196,14 +180,12 @@ func (cb *CircuitBreaker) toHalfOpen() {
 	cb.consecutiveSuccesses = 0
 }
 
-// GetState returns the current state
 func (cb *CircuitBreaker) GetState() State {
 	cb.mu.RLock()
 	defer cb.mu.RUnlock()
 	return cb.state
 }
 
-// GetStats returns circuit breaker statistics
 func (cb *CircuitBreaker) GetStats() Stats {
 	cb.mu.RLock()
 	defer cb.mu.RUnlock()
@@ -217,7 +199,6 @@ func (cb *CircuitBreaker) GetStats() Stats {
 	}
 }
 
-// Stats represents circuit breaker statistics
 type Stats struct {
 	Name                 string    `json:"name"`
 	State                string    `json:"state"`
@@ -226,7 +207,6 @@ type Stats struct {
 	LastFailure          time.Time `json:"last_failure,omitempty"`
 }
 
-// Reset resets the circuit breaker to closed state
 func (cb *CircuitBreaker) Reset() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()

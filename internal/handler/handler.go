@@ -45,7 +45,6 @@ type InfoResponse struct {
 	Services []ServiceInfo `json:"services"`
 }
 
-// Health returns service health status
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	resp := HealthResponse{
 		Status:  "ok",
@@ -54,7 +53,6 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// Info returns gateway information with service health status
 func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
 	services := make([]ServiceInfo, len(h.config.Services))
 	for i, svc := range h.config.Services {
@@ -83,7 +81,6 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// ServicesHealth returns detailed health status of all backend services
 func (h *Handler) ServicesHealth(w http.ResponseWriter, r *http.Request) {
 	if h.healthChecker == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
@@ -100,7 +97,6 @@ func (h *Handler) ServicesHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CreateAPIKey creates a new API key
 func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	var req apikey.CreateKeyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -135,7 +131,6 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListAPIKeys returns all API keys
 func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	keys, err := h.apiKeyMgr.ListKeys(r.Context())
 	if err != nil {
@@ -202,7 +197,6 @@ func (h *Handler) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetCircuitBreakers returns all circuit breaker statistics
 func (h *Handler) GetCircuitBreakers(w http.ResponseWriter, r *http.Request) {
 	if h.reverseProxy == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
@@ -219,7 +213,6 @@ func (h *Handler) GetCircuitBreakers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ResetCircuitBreaker resets a specific circuit breaker
 func (h *Handler) ResetCircuitBreaker(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if name == "" {
@@ -252,7 +245,6 @@ func (h *Handler) ResetCircuitBreaker(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ResetAllCircuitBreakers resets all circuit breakers
 func (h *Handler) ResetAllCircuitBreakers(w http.ResponseWriter, r *http.Request) {
 	if h.reverseProxy == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{

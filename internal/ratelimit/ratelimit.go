@@ -28,7 +28,6 @@ func New(client *redis.Client, requestsPerWindow int, window time.Duration) *Rat
 	}
 }
 
-// Allow checks if a request is allowed based on the key (IP or API key)
 func (rl *RateLimiter) Allow(ctx context.Context, key string) (*Result, error) {
 	now := time.Now()
 	windowStart := now.Truncate(rl.window)
@@ -58,7 +57,6 @@ func (rl *RateLimiter) Allow(ctx context.Context, key string) (*Result, error) {
 	}, nil
 }
 
-// AllowWithBurst implements token bucket algorithm for burst handling
 func (rl *RateLimiter) AllowWithBurst(ctx context.Context, key string, burstSize int) (*Result, error) {
 	now := time.Now()
 	bucketKey := fmt.Sprintf("ratelimit:bucket:%s", key)

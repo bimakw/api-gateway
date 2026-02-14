@@ -4,13 +4,11 @@ import (
 	"sync/atomic"
 )
 
-// RoundRobinSelector implements round-robin load balancing
 type RoundRobinSelector struct {
 	backends []*Backend
 	counter  uint64
 }
 
-// NewRoundRobinSelector creates a new round-robin selector
 func NewRoundRobinSelector(backends []*Backend) *RoundRobinSelector {
 	return &RoundRobinSelector{
 		backends: backends,
@@ -18,7 +16,6 @@ func NewRoundRobinSelector(backends []*Backend) *RoundRobinSelector {
 	}
 }
 
-// Select returns the next healthy backend using round-robin
 // Returns nil if no healthy backends are available
 func (r *RoundRobinSelector) Select() *Backend {
 	if len(r.backends) == 0 {
@@ -50,7 +47,6 @@ func (r *RoundRobinSelector) Select() *Backend {
 	return nil
 }
 
-// SetHealthy updates the health status of a backend
 func (r *RoundRobinSelector) SetHealthy(urlStr string, healthy bool) {
 	for _, b := range r.backends {
 		if b.URL.String() == urlStr {
@@ -60,7 +56,6 @@ func (r *RoundRobinSelector) SetHealthy(urlStr string, healthy bool) {
 	}
 }
 
-// GetBackends returns all backends
 func (r *RoundRobinSelector) GetBackends() []*Backend {
 	return r.backends
 }

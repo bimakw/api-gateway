@@ -29,17 +29,17 @@ func TestStateString(t *testing.T) {
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.MaxFailures != 5 {
-		t.Errorf("MaxFailures = %d, want 5", cfg.MaxFailures)
+	if cfg.MaxFailures != 7 {
+		t.Errorf("MaxFailures = %d, want 7", cfg.MaxFailures)
 	}
-	if cfg.ResetTimeout != 30*time.Second {
-		t.Errorf("ResetTimeout = %v, want 30s", cfg.ResetTimeout)
+	if cfg.ResetTimeout != 45*time.Second {
+		t.Errorf("ResetTimeout = %v, want 45s", cfg.ResetTimeout)
 	}
-	if cfg.HalfOpenMaxRequests != 3 {
-		t.Errorf("HalfOpenMaxRequests = %d, want 3", cfg.HalfOpenMaxRequests)
+	if cfg.HalfOpenMaxRequests != 2 {
+		t.Errorf("HalfOpenMaxRequests = %d, want 2", cfg.HalfOpenMaxRequests)
 	}
-	if cfg.SuccessThreshold != 2 {
-		t.Errorf("SuccessThreshold = %d, want 2", cfg.SuccessThreshold)
+	if cfg.SuccessThreshold != 3 {
+		t.Errorf("SuccessThreshold = %d, want 3", cfg.SuccessThreshold)
 	}
 }
 
@@ -58,11 +58,11 @@ func TestNewWithZeroConfig(t *testing.T) {
 	cb := New("test", Config{})
 
 	// Should use defaults for zero values
-	if cb.config.MaxFailures != 5 {
-		t.Errorf("MaxFailures = %d, want 5 (default)", cb.config.MaxFailures)
+	if cb.config.MaxFailures != 7 {
+		t.Errorf("MaxFailures = %d, want 7 (default)", cb.config.MaxFailures)
 	}
-	if cb.config.ResetTimeout != 30*time.Second {
-		t.Errorf("ResetTimeout = %v, want 30s (default)", cb.config.ResetTimeout)
+	if cb.config.ResetTimeout != 45*time.Second {
+		t.Errorf("ResetTimeout = %v, want 45s (default)", cb.config.ResetTimeout)
 	}
 }
 

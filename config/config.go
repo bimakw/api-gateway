@@ -56,7 +56,6 @@ type RateLimitConfig struct {
 	WindowDuration    time.Duration
 }
 
-// BackendConfig represents a single backend server
 type BackendConfig struct {
 	URL    string
 	Weight int
@@ -71,8 +70,6 @@ type ServiceConfig struct {
 	Strategy   string // load balancing strategy: "round-robin", "random"
 }
 
-// GetBackends returns backend configurations, with backward compatibility
-// If Backends is empty but TargetURL is set, returns single backend from TargetURL
 func (s *ServiceConfig) GetBackends() []BackendConfig {
 	if len(s.Backends) > 0 {
 		return s.Backends
@@ -83,7 +80,6 @@ func (s *ServiceConfig) GetBackends() []BackendConfig {
 	return nil
 }
 
-// GetStrategy returns the load balancing strategy, defaulting to round-robin
 func (s *ServiceConfig) GetStrategy() string {
 	if s.Strategy == "" {
 		return "round-robin"
@@ -131,7 +127,6 @@ func Load() *Config {
 }
 
 func loadServicesFromEnv() []ServiceConfig {
-	// Default services for demo
 	services := []ServiceConfig{
 		{
 			Name:       "auth-service",

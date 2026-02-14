@@ -1,11 +1,3 @@
-/*
- * Copyright (c) 2024 Bima Kharisma Wicaksana
- * GitHub: https://github.com/bimakw
- *
- * Licensed under MIT License with Attribution Requirement.
- * See LICENSE file for details.
- */
-
 package retry
 
 import (
@@ -17,7 +9,6 @@ import (
 	"time"
 )
 
-// Config holds retry configuration
 type Config struct {
 	// MaxRetries is the maximum number of retry attempts (0 = no retries)
 	MaxRetries int
@@ -38,7 +29,6 @@ type Config struct {
 	RetryableStatusCodes []int
 }
 
-// DefaultConfig returns sensible default retry configuration
 func DefaultConfig() Config {
 	return Config{
 		MaxRetries:   3,
@@ -54,12 +44,10 @@ func DefaultConfig() Config {
 	}
 }
 
-// Retryer handles retry logic with exponential backoff
 type Retryer struct {
 	config Config
 }
 
-// New creates a new Retryer with the given configuration
 func New(cfg Config) *Retryer {
 	if cfg.MaxRetries < 0 {
 		cfg.MaxRetries = 0
@@ -131,12 +119,10 @@ func (r *Retryer) GetDelay(attempt int) time.Duration {
 	return time.Duration(delay)
 }
 
-// MaxRetries returns the configured maximum retries
 func (r *Retryer) MaxRetries() int {
 	return r.config.MaxRetries
 }
 
-// Execute runs a function with retry logic
 // The function should return (statusCode, error)
 // Retries are attempted for retryable status codes or transient errors
 func (r *Retryer) Execute(ctx context.Context, fn func() (int, error)) Result {
@@ -199,7 +185,6 @@ func (r *Retryer) Execute(ctx context.Context, fn func() (int, error)) Result {
 	return result
 }
 
-// isTransientError checks if an error is likely transient and worth retrying
 func isTransientError(err error) bool {
 	if err == nil {
 		return false
@@ -232,7 +217,6 @@ func isTransientError(err error) bool {
 	return false
 }
 
-// containsIgnoreCase checks if s contains substr (case-insensitive)
 func containsIgnoreCase(s, substr string) bool {
 	sLower := toLower(s)
 	substrLower := toLower(substr)

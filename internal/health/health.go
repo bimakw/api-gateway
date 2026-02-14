@@ -18,7 +18,6 @@ const (
 	StatusUnknown   Status = "unknown"
 )
 
-// InstanceHealth represents health status of a single backend instance
 type InstanceHealth struct {
 	URL          string    `json:"url"`
 	Status       Status    `json:"status"`
@@ -27,7 +26,6 @@ type InstanceHealth struct {
 	ErrorMessage string    `json:"error_message,omitempty"`
 }
 
-// ServiceHealth represents aggregated health status of a service with all its instances
 type ServiceHealth struct {
 	Name         string            `json:"name"`
 	URL          string            `json:"url"`                    // Primary URL (for backward compatibility)
@@ -38,7 +36,6 @@ type ServiceHealth struct {
 	ErrorMessage string            `json:"error_message,omitempty"`
 }
 
-// HealthCallback is called when instance health status changes
 type HealthCallback func(serviceName, instanceURL string, healthy bool)
 
 type Checker struct {
@@ -103,14 +100,12 @@ func NewChecker(services []config.ServiceConfig, interval, timeout time.Duration
 	}
 }
 
-// RegisterCallback registers a callback to be called when instance health changes
 func (c *Checker) RegisterCallback(cb HealthCallback) {
 	c.callbackMu.Lock()
 	defer c.callbackMu.Unlock()
 	c.callbacks = append(c.callbacks, cb)
 }
 
-// notifyCallbacks notifies all registered callbacks of a health change
 func (c *Checker) notifyCallbacks(serviceName, instanceURL string, healthy bool) {
 	c.callbackMu.RLock()
 	callbacks := make([]HealthCallback, len(c.callbacks))
@@ -122,9 +117,7 @@ func (c *Checker) notifyCallbacks(serviceName, instanceURL string, healthy bool)
 	}
 }
 
-// Start begins the periodic health checking
 func (c *Checker) Start(ctx context.Context) {
-	// Run initial check
 	c.checkAll(ctx)
 
 	ticker := time.NewTicker(c.interval)
@@ -142,12 +135,10 @@ func (c *Checker) Start(ctx context.Context) {
 	}
 }
 
-// Stop stops the health checker
 func (c *Checker) Stop() {
 	close(c.stopCh)
 }
 
-// checkAll checks health of all services concurrently
 func (c *Checker) checkAll(ctx context.Context) {
 	var wg sync.WaitGroup
 
@@ -164,11 +155,9 @@ func (c *Checker) checkAll(ctx context.Context) {
 
 	wg.Wait()
 
-	// Update aggregated service health after all instances are checked
 	c.updateAggregatedHealth()
 }
 
-// checkInstance checks health of a single backend instance
 func (c *Checker) checkInstance(ctx context.Context, serviceName, instanceURL string) {
 	start := time.Now()
 	healthURL := instanceURL + "/health"
@@ -226,7 +215,6 @@ func (c *Checker) updateInstanceHealth(serviceName, instanceURL string, status S
 		return
 	}
 
-	// Check if status changed
 	previousStatus := instance.Status
 	statusChanged := previousStatus != status
 
@@ -237,13 +225,11 @@ func (c *Checker) updateInstanceHealth(serviceName, instanceURL string, status S
 
 	c.mu.Unlock()
 
-	// Notify callbacks if status changed
 	if statusChanged {
 		c.notifyCallbacks(serviceName, instanceURL, status == StatusHealthy)
 	}
 }
 
-// updateAggregatedHealth updates the aggregated health for each service
 func (c *Checker) updateAggregatedHealth() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -301,7 +287,6 @@ func (c *Checker) updateAggregatedHealth() {
 	}
 }
 
-// Legacy methods for backward compatibility
 
 func (c *Checker) updateHealth(name string, status Status, responseTime int64, errorMsg string) {
 	c.mu.Lock()
@@ -315,7 +300,6 @@ func (c *Checker) updateHealth(name string, status Status, responseTime int64, e
 	}
 }
 
-// checkService checks health of a single service (legacy - checks first backend only)
 func (c *Checker) checkService(ctx context.Context, svc config.ServiceConfig) {
 	backends := svc.GetBackends()
 	if len(backends) == 0 {
@@ -324,7 +308,6 @@ func (c *Checker) checkService(ctx context.Context, svc config.ServiceConfig) {
 	c.checkInstance(ctx, svc.Name, backends[0].URL)
 }
 
-// GetHealth returns health status of a specific service
 func (c *Checker) GetHealth(name string) *ServiceHealth {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -354,7 +337,6 @@ func (c *Checker) GetHealth(name string) *ServiceHealth {
 	return nil
 }
 
-// GetAllHealth returns health status of all services
 func (c *Checker) GetAllHealth() []*ServiceHealth {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -384,7 +366,6 @@ func (c *Checker) GetAllHealth() []*ServiceHealth {
 	return result
 }
 
-// IsHealthy checks if a service is healthy (at least one instance healthy)
 func (c *Checker) IsHealthy(name string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -395,7 +376,6 @@ func (c *Checker) IsHealthy(name string) bool {
 	return false
 }
 
-// GetInstanceHealth returns health of a specific instance
 func (c *Checker) GetInstanceHealth(serviceName, instanceURL string) *InstanceHealth {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

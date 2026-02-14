@@ -59,7 +59,6 @@ func Logger(logger *slog.Logger) Middleware {
 	}
 }
 
-// Metrics records request metrics for Prometheus
 func Metrics() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

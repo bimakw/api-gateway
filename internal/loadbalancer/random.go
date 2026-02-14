@@ -4,19 +4,16 @@ import (
 	"math/rand"
 )
 
-// RandomSelector implements random load balancing
 type RandomSelector struct {
 	backends []*Backend
 }
 
-// NewRandomSelector creates a new random selector
 func NewRandomSelector(backends []*Backend) *RandomSelector {
 	return &RandomSelector{
 		backends: backends,
 	}
 }
 
-// Select returns a random healthy backend
 // Returns nil if no healthy backends are available
 func (r *RandomSelector) Select() *Backend {
 	if len(r.backends) == 0 {
@@ -39,7 +36,6 @@ func (r *RandomSelector) Select() *Backend {
 	return healthy[rand.Intn(len(healthy))]
 }
 
-// SetHealthy updates the health status of a backend
 func (r *RandomSelector) SetHealthy(urlStr string, healthy bool) {
 	for _, b := range r.backends {
 		if b.URL.String() == urlStr {
@@ -49,7 +45,6 @@ func (r *RandomSelector) SetHealthy(urlStr string, healthy bool) {
 	}
 }
 
-// GetBackends returns all backends
 func (r *RandomSelector) GetBackends() []*Backend {
 	return r.backends
 }

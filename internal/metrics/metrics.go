@@ -1,11 +1,3 @@
-/*
- * Copyright (c) 2024 Bima Kharisma Wicaksana
- * GitHub: https://github.com/bimakw
- *
- * Licensed under MIT License with Attribution Requirement.
- * See LICENSE file for details.
- */
-
 package metrics
 
 import (
@@ -15,7 +7,6 @@ import (
 	"time"
 )
 
-// Metrics holds all the prometheus-style metrics for the API Gateway
 type Metrics struct {
 	mu sync.RWMutex
 
@@ -53,7 +44,6 @@ var (
 	once     sync.Once
 )
 
-// Get returns the singleton metrics instance
 func Get() *Metrics {
 	once.Do(func() {
 		instance = &Metrics{
@@ -70,7 +60,6 @@ func Get() *Metrics {
 	return instance
 }
 
-// RecordRequest records a completed HTTP request
 func (m *Metrics) RecordRequest(method, path string, status int, duration time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -95,7 +84,6 @@ func (m *Metrics) RecordRequest(method, path string, status int, duration time.D
 	}
 }
 
-// RecordServiceRequest records a request to a backend service
 func (m *Metrics) RecordServiceRequest(serviceName string, status int, latency time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -136,7 +124,6 @@ func (m *Metrics) DecrementInFlight() {
 	m.requestsInFlight--
 }
 
-// UpdateCircuitBreakerState updates the circuit breaker state for a service
 func (m *Metrics) UpdateCircuitBreakerState(serviceName, state string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -150,7 +137,6 @@ func (m *Metrics) IncrementCircuitBreakerTrips(serviceName string) {
 	m.circuitBreakerTrips[serviceName]++
 }
 
-// GetMetricsData returns all metrics data for the handler
 func (m *Metrics) GetMetricsData() map[string]interface{} {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -212,7 +198,6 @@ func (m *Metrics) GetMetricsData() map[string]interface{} {
 	}
 }
 
-// GetPrometheusFormat returns metrics in Prometheus text format
 func (m *Metrics) GetPrometheusFormat() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -297,7 +282,6 @@ func (m *Metrics) GetPrometheusFormat() string {
 	return result
 }
 
-// Handler returns an http.HandlerFunc for the /metrics endpoint
 func Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		accept := r.Header.Get("Accept")

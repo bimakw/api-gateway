@@ -100,7 +100,6 @@ func (m *Manager) CreateKey(ctx context.Context, req *CreateKeyRequest) (*Create
 	}, nil
 }
 
-// ValidateKey checks if an API key is valid
 func (m *Manager) ValidateKey(ctx context.Context, rawKey string) (*APIKey, error) {
 	keyHash := hashKey(rawKey)
 	redisKey := fmt.Sprintf("apikey:hash:%s", keyHash)
@@ -149,7 +148,6 @@ func (m *Manager) GetKey(ctx context.Context, id string) (*APIKey, error) {
 	return &apiKey, nil
 }
 
-// ListKeys returns all API keys
 func (m *Manager) ListKeys(ctx context.Context) ([]*APIKey, error) {
 	ids, err := m.client.SMembers(ctx, "apikey:list").Result()
 	if err != nil {

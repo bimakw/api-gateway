@@ -139,7 +139,6 @@ func (rp *ReverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"error":"Not found","message":"No service matches the requested path"}`))
 }
 
-// proxyWithRetry handles the proxy request with retry logic
 func (rp *ReverseProxy) proxyWithRetry(w http.ResponseWriter, r *http.Request, svc *serviceProxy) {
 	// Get circuit breaker for this service
 	cb := rp.cbRegistry.Get(svc.config.Name)
@@ -305,22 +304,18 @@ func (rp *ReverseProxy) GetServices() []config.ServiceConfig {
 	return services
 }
 
-// GetCircuitBreakerStats returns statistics for all circuit breakers
 func (rp *ReverseProxy) GetCircuitBreakerStats() []circuitbreaker.Stats {
 	return rp.cbRegistry.GetAllStats()
 }
 
-// ResetCircuitBreaker resets a specific circuit breaker
 func (rp *ReverseProxy) ResetCircuitBreaker(serviceName string) bool {
 	return rp.cbRegistry.ResetByName(serviceName)
 }
 
-// ResetAllCircuitBreakers resets all circuit breakers
 func (rp *ReverseProxy) ResetAllCircuitBreakers() {
 	rp.cbRegistry.Reset()
 }
 
-// UpdateBackendHealth updates the health status of a backend instance
 func (rp *ReverseProxy) UpdateBackendHealth(serviceName, instanceURL string, healthy bool) {
 	rp.mu.RLock()
 	defer rp.mu.RUnlock()
@@ -338,7 +333,6 @@ func (rp *ReverseProxy) UpdateBackendHealth(serviceName, instanceURL string, hea
 	}
 }
 
-// GetBackendStats returns backend statistics for a service
 func (rp *ReverseProxy) GetBackendStats(serviceName string) []BackendStats {
 	rp.mu.RLock()
 	defer rp.mu.RUnlock()
@@ -367,7 +361,6 @@ type BackendStats struct {
 	Weight    int    `json:"weight"`
 }
 
-// GetAllBackendStats returns backend statistics for all services
 func (rp *ReverseProxy) GetAllBackendStats() map[string][]BackendStats {
 	rp.mu.RLock()
 	defer rp.mu.RUnlock()

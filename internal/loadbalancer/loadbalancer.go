@@ -5,7 +5,6 @@ import (
 	"sync"
 )
 
-// Backend represents a single backend server instance
 type Backend struct {
 	URL       *url.URL
 	Weight    int
@@ -28,7 +27,6 @@ type LoadBalancer struct {
 	mu       sync.RWMutex
 }
 
-// New creates a new LoadBalancer with the specified strategy
 func New(strategy string, backends []*Backend) *LoadBalancer {
 	var selector Selector
 
@@ -45,28 +43,24 @@ func New(strategy string, backends []*Backend) *LoadBalancer {
 	}
 }
 
-// Select returns the next healthy backend
 func (lb *LoadBalancer) Select() *Backend {
 	lb.mu.RLock()
 	defer lb.mu.RUnlock()
 	return lb.selector.Select()
 }
 
-// SetHealthy updates the health status of a backend by URL
 func (lb *LoadBalancer) SetHealthy(urlStr string, healthy bool) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 	lb.selector.SetHealthy(urlStr, healthy)
 }
 
-// GetBackends returns all backends
 func (lb *LoadBalancer) GetBackends() []*Backend {
 	lb.mu.RLock()
 	defer lb.mu.RUnlock()
 	return lb.selector.GetBackends()
 }
 
-// HealthyCount returns the number of healthy backends
 func (lb *LoadBalancer) HealthyCount() int {
 	lb.mu.RLock()
 	defer lb.mu.RUnlock()

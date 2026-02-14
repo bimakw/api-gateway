@@ -11,7 +11,6 @@ type Registry struct {
 	config   Config
 }
 
-// NewRegistry creates a new circuit breaker registry
 func NewRegistry(config Config) *Registry {
 	return &Registry{
 		breakers: make(map[string]*CircuitBreaker),
@@ -19,7 +18,6 @@ func NewRegistry(config Config) *Registry {
 	}
 }
 
-// Get returns or creates a circuit breaker for the given service name
 func (r *Registry) Get(name string) *CircuitBreaker {
 	r.mu.RLock()
 	cb, exists := r.breakers[name]
@@ -42,7 +40,6 @@ func (r *Registry) Get(name string) *CircuitBreaker {
 	return cb
 }
 
-// GetAll returns all circuit breakers
 func (r *Registry) GetAll() map[string]*CircuitBreaker {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -54,7 +51,6 @@ func (r *Registry) GetAll() map[string]*CircuitBreaker {
 	return result
 }
 
-// GetAllStats returns statistics for all circuit breakers
 func (r *Registry) GetAllStats() []Stats {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -66,7 +62,6 @@ func (r *Registry) GetAllStats() []Stats {
 	return stats
 }
 
-// Reset resets all circuit breakers
 func (r *Registry) Reset() {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -76,7 +71,6 @@ func (r *Registry) Reset() {
 	}
 }
 
-// ResetByName resets a specific circuit breaker
 func (r *Registry) ResetByName(name string) bool {
 	r.mu.RLock()
 	cb, exists := r.breakers[name]

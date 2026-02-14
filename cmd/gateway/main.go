@@ -24,23 +24,19 @@ import (
 )
 
 func main() {
-	// Initialize logger
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
 	slog.SetDefault(logger)
 
-	// Load configuration
 	cfg := config.Load()
 
-	// Connect to Redis
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	})
 
-	// Test Redis connection
 	ctx := context.Background()
 	if err := redisClient.Ping(ctx).Err(); err != nil {
 		logger.Error("Failed to connect to Redis", "error", err)
@@ -48,22 +44,18 @@ func main() {
 	}
 	logger.Info("Connected to Redis")
 
-	// Initialize components
 	rateLimiter := ratelimit.New(redisClient, cfg.RateLimit.RequestsPerMinute, cfg.RateLimit.WindowDuration)
 	apiKeyMgr := apikey.NewManager(redisClient)
 
-	// Initialize health checker for backend services
 	healthChecker := health.NewChecker(
 		cfg.Services,
-		30*time.Second, // check interval
-		5*time.Second,  // timeout
+		25*time.Second,
+		4*time.Second,
 		logger,
 	)
 
-	// Start health checker in background
 	go healthChecker.Start(ctx)
 
-	// Create circuit breaker config
 	cbConfig := circuitbreaker.Config{
 		MaxFailures:         cfg.CircuitBreaker.MaxFailures,
 		ResetTimeout:        time.Duration(cfg.CircuitBreaker.ResetTimeoutSeconds) * time.Second,
@@ -71,7 +63,6 @@ func main() {
 		SuccessThreshold:    cfg.CircuitBreaker.SuccessThreshold,
 	}
 
-	// Create retry config
 	retryConfig := retry.Config{
 		MaxRetries:   cfg.Retry.MaxRetries,
 		InitialDelay: time.Duration(cfg.Retry.InitialDelayMs) * time.Millisecond,
@@ -80,14 +71,12 @@ func main() {
 		JitterFactor: cfg.Retry.JitterFactor,
 	}
 
-	// Create reverse proxy with circuit breaker and retry
 	reverseProxy, err := proxy.New(cfg.Services, cbConfig, retryConfig, logger)
 	if err != nil {
 		logger.Error("Failed to create reverse proxy", "error", err)
 		os.Exit(1)
 	}
 
-	// Register health callback to update load balancer health status
 	healthChecker.RegisterCallback(func(serviceName, instanceURL string, healthy bool) {
 		reverseProxy.UpdateBackendHealth(serviceName, instanceURL, healthy)
 		logger.Info("Backend health changed",
@@ -103,7 +92,6 @@ func main() {
 		"max_delay_ms", cfg.Retry.MaxDelayMs,
 	)
 
-	// Validate admin config
 	if cfg.Admin.Enabled && cfg.Admin.Password == "" {
 		logger.Error("Admin auth is enabled but ADMIN_PASSWORD is not set")
 		os.Exit(1)
@@ -117,10 +105,8 @@ func main() {
 
 	handlers := handler.New(cfg, apiKeyMgr, healthChecker, reverseProxy)
 
-	// Create router
 	mux := http.NewServeMux()
 
-	// Gateway management endpoints
 	mux.HandleFunc("GET /health", handlers.Health)
 	mux.HandleFunc("GET /info", handlers.Info)
 	mux.HandleFunc("GET /services/health", handlers.ServicesHealth)
@@ -129,18 +115,14 @@ func main() {
 	mux.HandleFunc("POST /admin/apikeys/{id}/revoke", handlers.RevokeAPIKey)
 	mux.HandleFunc("DELETE /admin/apikeys/{id}", handlers.DeleteAPIKey)
 
-	// Circuit breaker management endpoints
 	mux.HandleFunc("GET /admin/circuit-breakers", handlers.GetCircuitBreakers)
 	mux.HandleFunc("POST /admin/circuit-breakers/{name}/reset", handlers.ResetCircuitBreaker)
 	mux.HandleFunc("POST /admin/circuit-breakers/reset", handlers.ResetAllCircuitBreakers)
 
-	// Metrics endpoint (Prometheus compatible)
 	mux.HandleFunc("GET /metrics", metrics.Handler())
 
-	// Proxy all other requests
 	mux.Handle("/", reverseProxy)
 
-	// Build middleware chain
 	middlewares := []middleware.Middleware{
 		middleware.Recover(logger),
 		middleware.Metrics(),
@@ -148,31 +130,26 @@ func main() {
 		middleware.CORS([]string{"*"}),
 	}
 
-	// Add admin auth if enabled
 	if cfg.Admin.Enabled {
 		middlewares = append(middlewares, middleware.AdminAuth(cfg.Admin.Username, cfg.Admin.Password, logger))
 	}
 
-	// Add remaining middlewares
 	middlewares = append(middlewares,
 		middleware.APIKeyAuth(apiKeyMgr, false),
 		middleware.RateLimit(rateLimiter, cfg.RateLimit.BurstSize),
 	)
 
-	// Apply middleware chain
 	finalHandler := middleware.Chain(mux, middlewares...)
 
-	// Create server
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      finalHandler,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 25 * time.Second,
+		IdleTimeout:  90 * time.Second,
 	}
 
-	// Start server in goroutine
 	go func() {
 		logger.Info("Starting API Gateway", "addr", addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -181,25 +158,21 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	logger.Info("Shutting down server...")
 
-	// Graceful shutdown with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
 		logger.Error("Server forced to shutdown", "error", err)
 	}
 
-	// Stop health checker
 	healthChecker.Stop()
 
-	// Close Redis connection
 	redisClient.Close()
 
 	logger.Info("Server exited")
